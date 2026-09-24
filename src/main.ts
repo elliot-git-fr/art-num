@@ -1,8 +1,15 @@
 import './style.css';
-import { generators } from './generators';
+import './theme.css';
+import { generatorRegistry, generators } from './generators';
 import { palettes } from './palettes';
 import { hexToRgba, mulberry32 } from './random';
 import type { Generator, Palette, ParamValues, Preset, RenderContext } from './types';
+import { AnimationEngine } from './core/animation-engine';
+import { defaultParameters, randomizeParameters, sanitizeParameters } from './core/parameters';
+import { loadPresets, savePreset } from './core/presets';
+import { applyTheme, initialTheme, oppositeTheme, type Theme } from './core/theme';
+import { downloadCanvas } from './core/export';
+import { destroyGenerator, initializeGenerator, resetGenerator } from './core/generator-lifecycle';
 
 const defaults: Preset[] = [
   { name:'Nebula', generator:'particles', seed:48291, params:{count:430,size:1.2,speed:.5,direction:-8,randomness:.72,noiseScale:.006,noiseStrength:1.35,trail:.08,opacity:.65,connection:58,mouse:true}, palette:palettes[4] },
@@ -12,6 +19,8 @@ const defaults: Preset[] = [
 ];
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
+let theme: Theme = initialTheme({ storage: localStorage, prefersDark: () => matchMedia('(prefers-color-scheme: dark)').matches });
+applyTheme(theme, document.documentElement, localStorage);
 app.innerHTML = `
   <div class="studio">
     <header class="topbar">
@@ -22,6 +31,8 @@ app.innerHTML = `
         <button class="icon-button" data-action="randomize" title="Randomize">⌁</button>
       </div>
       <div class="top-actions">
+        <button class="icon-button theme-button" data-action="theme" title="Switch theme">☼</button>
+        <button class="text-button" data-action="export">Export</button>
         <button class="text-button" data-action="save">Save preset</button>
         <button class="icon-button" data-action="fullscreen" title="Fullscreen">↗</button>
       </div>
@@ -66,16 +77,14 @@ let active: Generator = generators[0];
 let params: ParamValues = getDefaults(active);
 let palette: Palette = { ...palettes[0] };
 let seed = 48291;
-let playing = true;
 let frame = 0;
 let started = performance.now();
-let last = started;
 let generatorState: unknown;
 let needsReset = true;
 let mouse = { x: 0, y: 0, active: false };
 let fps = 60;
 
-function getDefaults(generator: Generator): ParamValues { return Object.fromEntries(generator.params.map(p => [p.key, p.default])); }
+function getDefaults(generator: Generator): ParamValues { return defaultParameters(generator); }
 function query<T extends Element>(selector:string) { return document.querySelector<T>(selector)!; }
 
 function resize() {
@@ -87,11 +96,13 @@ function resize() {
 }
 
 function renderGenerators() {
-  query('.generator-list').innerHTML = generators.map(g => `<button class="generator-item ${g.id===active.id?'active':''}" data-generator="${g.id}"><span class="gen-icon">${g.icon}</span><span>${g.name}</span><small>0${generators.indexOf(g)+1}</small></button>`).join('');
+  const categories = new Map<string, Generator[]>();
+  generators.forEach(generator => categories.set(generator.category, [...(categories.get(generator.category) || []), generator]));
+  query('.generator-list').innerHTML = [...categories].map(([category, items]) => `<div class="generator-category"><div class="category-label">${category}</div>${items.map(g => `<button class="generator-item ${g.id===active.id?'active':''}" data-generator="${g.id}"><span class="gen-icon">${g.icon}</span><span>${g.name}</span><small>${String(generators.indexOf(g)+1).padStart(2,'0')}</small></button>`).join('')}</div>`).join('');
 }
 
 function renderPresets() {
-  const user:Preset[] = JSON.parse(localStorage.getItem('gas-presets') || '[]');
+  const user = loadPresets(localStorage, generatorRegistry);
   query('.preset-list').innerHTML = [...defaults,...user].map((p,i)=>`<button class="preset-item" data-preset="${i}"><span class="preset-swatch" style="--p:${p.palette.primary};--s:${p.palette.secondary}"></span><span>${escapeHtml(p.name)}</span></button>`).join('');
 }
 
@@ -115,24 +126,24 @@ function renderPalette() {
   query('.seed-value').textContent=String(seed).padStart(8,'0');
 }
 
-function reset() { frame=0; started=performance.now(); needsReset=true; }
-function makeContext(now:number, delta:number):RenderContext { const ratio=Math.min(devicePixelRatio,2); return {ctx,width:canvas.width/ratio,height:canvas.height/ratio,time:now-started,delta,frame,seed,mouse,params,palette,random:mulberry32(seed)}; }
+function reset() { frame=0; started=performance.now(); needsReset=true; animationEngine.reset(); }
+function makeContext(now:number, delta:number):RenderContext { const ratio=Math.min(devicePixelRatio,2); return {renderer:'canvas2d',ctx,width:canvas.width/ratio,height:canvas.height/ratio,time:now-started,delta,frame,seed,mouse,params,palette,random:mulberry32(seed)}; }
 
-function animate(now:number) {
-  requestAnimationFrame(animate);
-  if(!playing) return;
-  const delta=Math.min(40,now-last); last=now; fps=fps*.9+(1000/Math.max(delta,1))*.1;
+function animate(now:number, delta:number) {
+  fps=fps*.9+(1000/Math.max(delta,1))*.1;
   const c=makeContext(now,delta);
-  if(needsReset){ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=palette.background;ctx.fillRect(0,0,canvas.width,canvas.height);ctx.setTransform(Math.min(devicePixelRatio,2),0,0,Math.min(devicePixelRatio,2),0,0);generatorState=active.init?.(c);needsReset=false;}
+  if(needsReset){ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=palette.background;ctx.fillRect(0,0,canvas.width,canvas.height);ctx.setTransform(Math.min(devicePixelRatio,2),0,0,Math.min(devicePixelRatio,2),0,0);generatorState=generatorState===undefined?initializeGenerator(active,c):resetGenerator(active,c,generatorState);needsReset=false;}
   ctx.save();
   if(active.id==='particles'){ctx.fillStyle=hexToRgba(palette.background,Math.max(.025,Number(params.trail)));ctx.fillRect(0,0,c.width,c.height)}else{ctx.fillStyle=palette.background;ctx.fillRect(0,0,c.width,c.height)}
   active.render(c,generatorState); ctx.restore(); frame++;
   if(frame%20===0){query('.fps').textContent=`${Math.round(Math.min(fps,99))} FPS`;query('.elements').textContent=`${Math.round(active.elementCount?.(params)||0).toLocaleString()} ELEMENTS`;}
 }
 
-function selectGenerator(id:string){const found=generators.find(g=>g.id===id);if(!found)return;active=found;params=getDefaults(active);renderGenerators();renderParameters();reset();}
-function randomize(){const random=mulberry32(seed+frame+Date.now());for(const def of active.params){if(def.type==='slider'&&def.random){const [min,max]=def.random;let value=min+random()*(max-min);if((def.step||1)>=1)value=Math.round(value/(def.step||1))*(def.step||1);else value=Number(value.toFixed(3));params[def.key]=value;}else if(def.type==='toggle')params[def.key]=random()>.35;}renderParameters();reset();toast('New variation generated');}
-function applyPreset(preset:Preset){active=generators.find(g=>g.id===preset.generator)||generators[0];params={...getDefaults(active),...preset.params};palette={...preset.palette};seed=preset.seed;renderGenerators();renderParameters();renderPalette();reset();toast(`${preset.name} loaded`);}
+const animationEngine = new AnimationEngine(animate);
+
+function selectGenerator(id:string){const found=generatorRegistry.get(id);if(!found)return;destroyGenerator(active,generatorState);generatorState=undefined;active=found;params=getDefaults(active);renderGenerators();renderParameters();reset();}
+function randomize(){params=randomizeParameters(active,mulberry32(seed+frame+Date.now()));renderParameters();reset();toast('New variation generated');}
+function applyPreset(preset:Preset){destroyGenerator(active,generatorState);generatorState=undefined;active=generatorRegistry.get(preset.generator)||generators[0];params=sanitizeParameters(active,preset.params);palette={...preset.palette};seed=preset.seed;renderGenerators();renderParameters();renderPalette();reset();toast(`${preset.name} loaded`);}
 function toast(message:string){const el=query('.toast');el.textContent=message;el.classList.add('show');window.setTimeout(()=>el.classList.remove('show'),1800)}
 function formatValue(value:unknown){return typeof value==='number'&&!Number.isInteger(value)?value.toFixed(value<.1?3:2).replace(/0+$/,'').replace(/\.$/,''):String(value)}
 function escapeHtml(s:string){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
@@ -142,16 +153,20 @@ document.addEventListener('click',async event=>{const target=(event.target as HT
   if(target.dataset.palette){palette={...palettes[Number(target.dataset.palette)]};renderPalette();reset();}
   if(target.dataset.preset){const all=[...defaults,...JSON.parse(localStorage.getItem('gas-presets')||'[]')];applyPreset(all[Number(target.dataset.preset)]);}
   const action=target.dataset.action;if(!action)return;
-  if(action==='play'){playing=!playing;target.querySelector('.play-icon')!.textContent=playing?'Ⅱ':'▶';if(playing)last=performance.now();}
+  if(action==='play'){if(animationEngine.running)animationEngine.pause();else animationEngine.resume();target.querySelector('.play-icon')!.textContent=animationEngine.running?'Ⅱ':'▶';}
   if(action==='about')toast('Generative Art Studio · Canvas 2D');
+  if(action==='theme'){theme=oppositeTheme(theme);applyTheme(theme,document.documentElement,localStorage);target.textContent=theme==='dark'?'☼':'☾';toast(`${theme==='dark'?'Dark':'Light'} mode`);}
+  if(action==='export'){downloadCanvas(canvas,`${active.id}-${seed}.png`);toast('Artwork exported');}
   if(action==='restart')reset(); if(action==='randomize')randomize(); if(action==='reset-params'){params=getDefaults(active);renderParameters();reset();}
   if(action==='new-seed'){seed=Math.floor(Math.random()*99999999);renderPalette();reset();toast('New seed created');}
   if(action==='copy-seed'){await navigator.clipboard.writeText(String(seed));toast('Seed copied');}
   if(action==='random-palette'){palette={...palettes[Math.floor(Math.random()*palettes.length)]};renderPalette();reset();}
   if(action==='fullscreen'){if(!document.fullscreenElement)await query('.canvas-wrap').requestFullscreen();else await document.exitFullscreen();}
-  if(action==='save'){const name=window.prompt('Name this preset',`Untitled ${active.name}`)?.trim();if(name){const saved:Preset[]=JSON.parse(localStorage.getItem('gas-presets')||'[]');saved.push({name,generator:active.id,seed,params:{...params},palette:{...palette}});localStorage.setItem('gas-presets',JSON.stringify(saved));renderPresets();toast('Preset saved locally');}}
+  if(action==='save'){const name=window.prompt('Name this preset',`Untitled ${active.name}`)?.trim();if(name){savePreset(localStorage,generatorRegistry,{name,generator:active.id,seed,params:{...params},palette:{...palette}});renderPresets();toast('Preset saved locally');}}
 });
 document.addEventListener('input',event=>{const input=event.target as HTMLInputElement;if(input.dataset.param){const def=active.params.find(p=>p.key===input.dataset.param)!;params[def.key]=def.type==='toggle'?input.checked:def.type==='slider'?Number(input.value):input.value;const out=input.parentElement?.querySelector('output');if(out)out.textContent=formatValue(params[def.key]);needsReset=Boolean(active.init); }if(input.dataset.color){palette={...palette,[input.dataset.color]:input.value};const code=input.parentElement?.querySelector('code');if(code)code.textContent=input.value.toUpperCase();reset();}});
 canvas.addEventListener('pointermove',event=>{const r=canvas.getBoundingClientRect();mouse={x:event.clientX-r.left,y:event.clientY-r.top,active:true};});canvas.addEventListener('pointerleave',()=>mouse.active=false);
+window.addEventListener('beforeunload',()=>{animationEngine.destroy();destroyGenerator(active,generatorState);});
 new ResizeObserver(resize).observe(canvas.parentElement!);
-renderGenerators();renderPresets();renderParameters();renderPalette();resize();requestAnimationFrame(animate);
+query<HTMLButtonElement>('.theme-button').textContent=theme==='dark'?'☼':'☾';
+renderGenerators();renderPresets();renderParameters();renderPalette();resize();animationEngine.start();

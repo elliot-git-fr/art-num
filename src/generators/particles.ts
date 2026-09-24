@@ -6,6 +6,8 @@ type Dot = { x: number; y: number; vx: number; vy: number; size: number };
 
 export const particles: Generator = {
   id: 'particles', name: 'Particles', icon: '✦', description: 'A drifting constellation of connected particles.',
+  category: 'Particles', tags: ['particles', 'motion', 'interactive'], renderer: 'canvas2d', defaultPreset: 'Nebula',
+  capabilities: { animated: true, interactive: true, deterministic: true, exportable: true },
   params: [
     slider('count', 'Particle count', 320, 30, 900, 1, [120, 620]),
     slider('size', 'Particle size', 1.4, 0.4, 5, 0.1, [0.6, 2.8]),
