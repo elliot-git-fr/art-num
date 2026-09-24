@@ -6,8 +6,10 @@ export interface ValidationResult {
 }
 
 export function defaultParameters(generator: Generator): ParamValues {
-  return Object.fromEntries(generator.params.map(parameter => [parameter.key, parameter.default]));
+  return defaultParameterValues(generator.params);
 }
+
+export function defaultParameterValues(parameters:ParameterDefinition[]):ParamValues{return Object.fromEntries(parameters.map(parameter=>[parameter.key,parameter.default]));}
 
 export function validateParameterSchema(parameters: ParameterDefinition[]): ValidationResult {
   const errors: string[] = [];
@@ -29,8 +31,12 @@ export function validateParameterSchema(parameters: ParameterDefinition[]): Vali
 }
 
 export function sanitizeParameters(generator: Generator, values: ParamValues): ParamValues {
-  const result = defaultParameters(generator);
-  for (const definition of generator.params) result[definition.key] = sanitizeValue(definition, values[definition.key]);
+  return sanitizeParameterValues(generator.params,values);
+}
+
+export function sanitizeParameterValues(parameters:ParameterDefinition[],values:ParamValues):ParamValues{
+  const result=defaultParameterValues(parameters);
+  for(const definition of parameters)result[definition.key]=sanitizeValue(definition,values[definition.key]);
   return result;
 }
 
