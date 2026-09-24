@@ -1,7 +1,6 @@
-import type { RenderQuality } from '../types';
+import type { PreviewQuality,RenderQuality } from '../types';
 
 export type PerformanceState = 'excellent' | 'stable' | 'degraded' | 'critical';
-export type PreviewQuality = 'low' | 'balanced' | 'high' | 'auto';
 
 export interface PerformanceSnapshot {
   fps: number;

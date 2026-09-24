@@ -75,6 +75,7 @@ canvas { touch-action: none; }
   transform: translateX(102%);
 }
 .studio[data-panel='art'] .left-panel,
+.studio[data-panel='layers'] .left-panel,
 .studio[data-panel='presets'] .left-panel,
 .studio[data-panel='parameters'] .right-panel,
 .studio[data-panel='colors'] .right-panel {
@@ -86,6 +87,8 @@ canvas { touch-action: none; }
 .studio[data-panel='presets'] .generator-list { display: none; }
 .studio[data-panel='presets'] .sidebar-bottom { display: block; margin-top: 0; border-top: 0; }
 .studio[data-panel='art'] .sidebar-bottom { display: none; }
+.studio[data-panel='layers'] .generator-list,.studio[data-panel='layers'] .left-panel>.panel-heading,.studio[data-panel='layers'] .sidebar-bottom { display:none; }
+.studio[data-panel='layers'] .layers-panel { display:block; max-height:none; }
 .studio[data-panel='colors'] .right-panel > .inspector-head,
 .studio[data-panel='colors'] .right-panel > .description,
 .studio[data-panel='colors'] .parameters,
@@ -104,7 +107,7 @@ canvas { touch-action: none; }
   grid-row: 3;
   z-index: 9;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0,1fr));
+  grid-template-columns: repeat(5, minmax(0,1fr));
   background: var(--ui-surface);
   border-top: 1px solid var(--ui-border);
   padding-bottom: env(safe-area-inset-bottom);

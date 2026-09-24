@@ -2,6 +2,7 @@ export type ParamValue = number | boolean | string;
 export type ParamValues = Record<string, ParamValue>;
 export type ControlType = 'slider' | 'number' | 'toggle' | 'select' | 'color' | 'button';
 export type RendererType = 'canvas2d' | 'webgl' | 'three' | 'shader';
+export type PreviewQuality = 'low' | 'balanced' | 'high' | 'auto';
 export type GeneratorCategory = 'Particles' | 'Geometry' | 'Mathematical' | 'Organic' | 'Fields' | 'Patterns' | 'Fractals' | 'Physics' | 'Experimental';
 
 export interface GeneratorCapabilities {

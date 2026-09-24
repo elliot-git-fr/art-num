@@ -22,12 +22,16 @@ test('tablet portrait uses on-demand panels', async ({ page }) => {
 test('mobile drawers are touch-sized and never overflow horizontally', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
   await expect(page.locator('.studio')).toHaveAttribute('data-layout', 'mobile-portrait');
-  const buttons = page.locator('.mobile-nav button'); expect(await buttons.count()).toBe(4);
+  const buttons = page.locator('.mobile-nav button'); expect(await buttons.count()).toBe(5);
   for (const button of await buttons.all()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await page.getByRole('button', { name: 'Colors' }).click(); await expect(page.locator('.palette-section')).toBeVisible();
   await page.getByRole('button', { name: 'Presets' }).click(); await expect(page.locator('.preset-list')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test('layers can be added, selected, composited and managed',async({page})=>{await page.setViewportSize({width:1440,height:900});await page.goto('/');await page.getByRole('button',{name:'Add Layer'}).click();await page.locator('.add-layer-select').selectOption('flow');await page.locator('[data-action="confirm-add-layer"]').click();await expect(page.locator('.layer-item')).toHaveCount(2);const active=page.locator('.layer-item.active');await active.locator('[data-layer-opacity]').evaluate((element:HTMLInputElement)=>{element.value='.42';element.dispatchEvent(new Event('input',{bubbles:true}));});await active.locator('[data-layer-blend]').selectOption('screen');await active.getByRole('button',{name:/Hide/}).click();await expect(active.getByRole('button',{name:/Show/})).toBeVisible();await active.getByRole('button',{name:/Show/}).click();await active.getByRole('button',{name:/Solo/}).click();await active.getByRole('button',{name:/Duplicate/}).click();await expect(page.locator('.layer-item')).toHaveCount(3);});
+
+test('layers drawer is available on mobile',async({page})=>{await page.setViewportSize({width:390,height:844});await page.goto('/');await page.getByRole('button',{name:'Layers',exact:true}).click();await expect(page.locator('.layers-panel')).toBeVisible();await expect(page.locator('.canvas-wrap')).toBeVisible();});
 
 test('orientation changes resize a live canvas without errors', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
