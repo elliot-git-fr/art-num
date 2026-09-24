@@ -10,12 +10,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "quality": "npm run test && npm run typecheck && npm run lint && npm run build"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.2.4",
+    "@playwright/test": "^1.55.0",
     "eslint": "^9.36.0",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.44.1",

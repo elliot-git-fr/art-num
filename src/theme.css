@@ -71,6 +71,8 @@ body,
 .hint { color: var(--ui-text-secondary); }
 .control,
 .palette-fields span { color: var(--ui-text-secondary); }
+.background-mode { margin-left: 3px; padding: 0; border: 0; background: transparent; color: var(--ui-accent); font: 7px ui-monospace, monospace; cursor: pointer; }
+.palette-fields input:disabled { opacity: .55; cursor: not-allowed; }
 .range-control input { background: var(--ui-control-track); }
 .range-control input::-webkit-slider-thumb { background: var(--ui-accent); border-color: var(--ui-text-primary); }
 .toggle-control i { background: var(--ui-control-track); }
@@ -84,7 +86,7 @@ body,
 .canvas-wrap { border-color: var(--ui-border); box-shadow: 0 6px 30px var(--ui-shadow); }
 .toast { background: var(--ui-surface); border-color: var(--ui-border); color: var(--ui-text-primary); }
 
-.generator-list { overflow-y: auto; min-height: 0; }
+.generator-list { flex: 1; overflow-y: auto; min-height: 0; }
 .generator-category + .generator-category { margin-top: 12px; }
 .category-label { padding: 0 9px 5px; font: 8px ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; }
 

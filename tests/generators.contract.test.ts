@@ -8,7 +8,7 @@ import type { RenderContext } from '../src/types';
 
 function fakeContext(seed = 42): RenderContext {
   const ctx = new Proxy({}, { get: () => () => undefined, set: () => true }) as CanvasRenderingContext2D;
-  return { renderer: 'canvas2d', ctx, width: 320, height: 240, time: 1000, delta: 16, frame: 1, seed, mouse: { x: 0, y: 0, active: false }, params: {}, palette: palettes[0], random: mulberry32(seed) };
+  return { renderer: 'canvas2d', ctx, width: 320, height: 240, time: 1000, delta: 16, frame: 1, seed, pointer: { x: 0, y: 0, active: false, down: false, pressure: 0, type: 'mouse' }, params: {}, palette: palettes[0], random: mulberry32(seed) };
 }
 
 describe.each(generators)('$name generator contract', generator => {

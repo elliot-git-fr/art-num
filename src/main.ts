@@ -1,5 +1,6 @@
 import './style.css';
 import './theme.css';
+import './responsive.css';
 import { generatorRegistry, generators } from './generators';
 import { palettes } from './palettes';
 import { hexToRgba, mulberry32 } from './random';
@@ -7,9 +8,11 @@ import type { Generator, Palette, ParamValues, Preset, RenderContext } from './t
 import { AnimationEngine } from './core/animation-engine';
 import { defaultParameters, randomizeParameters, sanitizeParameters } from './core/parameters';
 import { loadPresets, savePreset } from './core/presets';
-import { applyTheme, initialTheme, oppositeTheme, type Theme } from './core/theme';
+import { applyTheme, initialTheme, oppositeTheme, syncCanvasBackground, type ArtworkBackgroundMode, type Theme } from './core/theme';
 import { downloadCanvas } from './core/export';
 import { destroyGenerator, initializeGenerator, resetGenerator } from './core/generator-lifecycle';
+import { calculateCanvasSize, layoutMode } from './core/responsive';
+import { PointerTracker } from './core/pointer';
 
 const defaults: Preset[] = [
   { name:'Nebula', generator:'particles', seed:48291, params:{count:430,size:1.2,speed:.5,direction:-8,randomness:.72,noiseScale:.006,noiseStrength:1.35,trail:.08,opacity:.65,connection:58,mouse:true}, palette:palettes[4] },
@@ -68,6 +71,13 @@ app.innerHTML = `
         <div class="seed-control"><code class="seed-value"></code><button data-action="copy-seed" title="Copy seed">▢</button><button data-action="new-seed" title="New seed">↻</button></div>
       </section>
     </aside>
+    <button class="drawer-backdrop" data-action="close-panel" aria-label="Close panel"></button>
+    <nav class="mobile-nav" aria-label="Studio panels">
+      <button data-panel="art" aria-label="Art" aria-expanded="false"><span>✦</span>Art</button>
+      <button data-panel="parameters" aria-label="Parameters" aria-expanded="false"><span>⌁</span>Parameters</button>
+      <button data-panel="colors" aria-label="Colors" aria-expanded="false"><span>◉</span>Colors</button>
+      <button data-panel="presets" aria-label="Presets" aria-expanded="false"><span>▦</span>Presets</button>
+    </nav>
     <div class="toast"></div>
   </div>`;
 
@@ -75,25 +85,31 @@ const canvas = document.querySelector<HTMLCanvasElement>('#art-canvas')!;
 const ctx = canvas.getContext('2d', { alpha: false })!;
 let active: Generator = generators[0];
 let params: ParamValues = getDefaults(active);
-let palette: Palette = { ...palettes[0] };
+let backgroundMode: ArtworkBackgroundMode = 'auto';
+let palette: Palette = syncCanvasBackground({ ...palettes[0] }, backgroundMode, theme);
 let seed = 48291;
 let frame = 0;
 let started = performance.now();
 let generatorState: unknown;
 let needsReset = true;
-let mouse = { x: 0, y: 0, active: false };
+const pointerTracker = new PointerTracker();
 let fps = 60;
+let mobilePanel: string | null = null;
 
 function getDefaults(generator: Generator): ParamValues { return defaultParameters(generator); }
 function query<T extends Element>(selector:string) { return document.querySelector<T>(selector)!; }
 
 function resize() {
   const box = canvas.parentElement!.getBoundingClientRect();
-  const ratio = Math.min(devicePixelRatio, 2);
-  canvas.width = Math.floor(box.width * ratio); canvas.height = Math.floor(box.height * ratio);
-  canvas.style.width = `${box.width}px`; canvas.style.height = `${box.height}px`;
-  ctx.setTransform(ratio,0,0,ratio,0,0); needsReset = true;
+  const size = calculateCanvasSize(box.width,box.height,devicePixelRatio);
+  canvas.width=size.pixelWidth;canvas.height=size.pixelHeight;
+  canvas.style.width=`${size.cssWidth}px`;canvas.style.height=`${size.cssHeight}px`;
+  ctx.setTransform(size.pixelRatio,0,0,size.pixelRatio,0,0);needsReset=true;
+  const mode=layoutMode(window.innerWidth,window.innerHeight);query<HTMLElement>('.studio').dataset.layout=mode;
+  if(mode==='desktop'||mode==='large-desktop'||mode==='tablet-landscape')setMobilePanel(null);
 }
+
+function setMobilePanel(panel:string|null){mobilePanel=panel;const studio=query<HTMLElement>('.studio');if(panel)studio.dataset.panel=panel;else delete studio.dataset.panel;document.querySelectorAll<HTMLButtonElement>('.mobile-nav button').forEach(button=>button.setAttribute('aria-expanded',String(button.dataset.panel===panel)));if(panel==='colors')requestAnimationFrame(()=>query('.palette-section').scrollIntoView({block:'start'}));if(panel==='presets')requestAnimationFrame(()=>query('.sidebar-bottom').scrollIntoView({block:'start'}));}
 
 function renderGenerators() {
   const categories = new Map<string, Generator[]>();
@@ -121,13 +137,13 @@ function renderParameters() {
 
 function renderPalette() {
   const fields:[keyof Palette,string][]=[['background','Background'],['primary','Primary'],['secondary','Secondary'],['accent','Accent']];
-  query('.palette-fields').innerHTML=fields.map(([key,label])=>`<label><span>${label}</span><input type="color" data-color="${key}" value="${palette[key]}"><code>${palette[key].toUpperCase()}</code></label>`).join('');
+  query('.palette-fields').innerHTML=fields.map(([key,label])=>`<label><span>${label}${key==='background'?` <button type="button" class="background-mode" data-action="background-mode">${backgroundMode.toUpperCase()}</button>`:''}</span><input type="color" data-color="${key}" value="${palette[key]}" ${key==='background'&&backgroundMode==='auto'?'disabled':''}><code>${palette[key].toUpperCase()}</code></label>`).join('');
   query('.palette-presets').innerHTML=palettes.map((p,i)=>`<button data-palette="${i}" title="${p.name}" style="--bg:${p.background};--p:${p.primary};--s:${p.secondary};--a:${p.accent}"></button>`).join('');
   query('.seed-value').textContent=String(seed).padStart(8,'0');
 }
 
 function reset() { frame=0; started=performance.now(); needsReset=true; animationEngine.reset(); }
-function makeContext(now:number, delta:number):RenderContext { const ratio=Math.min(devicePixelRatio,2); return {renderer:'canvas2d',ctx,width:canvas.width/ratio,height:canvas.height/ratio,time:now-started,delta,frame,seed,mouse,params,palette,random:mulberry32(seed)}; }
+function makeContext(now:number, delta:number):RenderContext { const ratio=Math.min(devicePixelRatio,2); return {renderer:'canvas2d',ctx,width:canvas.width/ratio,height:canvas.height/ratio,time:now-started,delta,frame,seed,pointer:pointerTracker.state,params,palette,random:mulberry32(seed)}; }
 
 function animate(now:number, delta:number) {
   fps=fps*.9+(1000/Math.max(delta,1))*.1;
@@ -143,30 +159,38 @@ const animationEngine = new AnimationEngine(animate);
 
 function selectGenerator(id:string){const found=generatorRegistry.get(id);if(!found)return;destroyGenerator(active,generatorState);generatorState=undefined;active=found;params=getDefaults(active);renderGenerators();renderParameters();reset();}
 function randomize(){params=randomizeParameters(active,mulberry32(seed+frame+Date.now()));renderParameters();reset();toast('New variation generated');}
-function applyPreset(preset:Preset){destroyGenerator(active,generatorState);generatorState=undefined;active=generatorRegistry.get(preset.generator)||generators[0];params=sanitizeParameters(active,preset.params);palette={...preset.palette};seed=preset.seed;renderGenerators();renderParameters();renderPalette();reset();toast(`${preset.name} loaded`);}
+function applyPreset(preset:Preset){destroyGenerator(active,generatorState);generatorState=undefined;active=generatorRegistry.get(preset.generator)||generators[0];params=sanitizeParameters(active,preset.params);backgroundMode=preset.backgroundMode??'custom';palette=syncCanvasBackground({...preset.palette},backgroundMode,theme);seed=preset.seed;renderGenerators();renderParameters();renderPalette();reset();toast(`${preset.name} loaded`);}
 function toast(message:string){const el=query('.toast');el.textContent=message;el.classList.add('show');window.setTimeout(()=>el.classList.remove('show'),1800)}
 function formatValue(value:unknown){return typeof value==='number'&&!Number.isInteger(value)?value.toFixed(value<.1?3:2).replace(/0+$/,'').replace(/\.$/,''):String(value)}
 function escapeHtml(s:string){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 
 document.addEventListener('click',async event=>{const target=(event.target as HTMLElement).closest<HTMLElement>('button');if(!target)return;
+  if(target.dataset.panel){setMobilePanel(mobilePanel===target.dataset.panel?null:target.dataset.panel);return;}
   if(target.dataset.generator)selectGenerator(target.dataset.generator);
-  if(target.dataset.palette){palette={...palettes[Number(target.dataset.palette)]};renderPalette();reset();}
-  if(target.dataset.preset){const all=[...defaults,...JSON.parse(localStorage.getItem('gas-presets')||'[]')];applyPreset(all[Number(target.dataset.preset)]);}
+  if(target.dataset.palette){backgroundMode='custom';palette={...palettes[Number(target.dataset.palette)]};renderPalette();reset();}
+  if(target.dataset.preset){const all=[...defaults,...loadPresets(localStorage,generatorRegistry)];applyPreset(all[Number(target.dataset.preset)]);}
   const action=target.dataset.action;if(!action)return;
   if(action==='play'){if(animationEngine.running)animationEngine.pause();else animationEngine.resume();target.querySelector('.play-icon')!.textContent=animationEngine.running?'Ⅱ':'▶';}
   if(action==='about')toast('Generative Art Studio · Canvas 2D');
-  if(action==='theme'){theme=oppositeTheme(theme);applyTheme(theme,document.documentElement,localStorage);target.textContent=theme==='dark'?'☼':'☾';toast(`${theme==='dark'?'Dark':'Light'} mode`);}
+  if(action==='close-panel')setMobilePanel(null);
+  if(action==='theme'){theme=oppositeTheme(theme);applyTheme(theme,document.documentElement,localStorage);palette=syncCanvasBackground(palette,backgroundMode,theme);renderPalette();reset();target.textContent=theme==='dark'?'☼':'☾';toast(`${theme==='dark'?'Dark':'Light'} mode`);}
+  if(action==='background-mode'){backgroundMode=backgroundMode==='auto'?'custom':'auto';palette=syncCanvasBackground(palette,backgroundMode,theme);renderPalette();reset();toast(`Background ${backgroundMode}`);}
   if(action==='export'){downloadCanvas(canvas,`${active.id}-${seed}.png`);toast('Artwork exported');}
   if(action==='restart')reset(); if(action==='randomize')randomize(); if(action==='reset-params'){params=getDefaults(active);renderParameters();reset();}
   if(action==='new-seed'){seed=Math.floor(Math.random()*99999999);renderPalette();reset();toast('New seed created');}
   if(action==='copy-seed'){await navigator.clipboard.writeText(String(seed));toast('Seed copied');}
-  if(action==='random-palette'){palette={...palettes[Math.floor(Math.random()*palettes.length)]};renderPalette();reset();}
+  if(action==='random-palette'){backgroundMode='custom';palette={...palettes[Math.floor(Math.random()*palettes.length)]};renderPalette();reset();}
   if(action==='fullscreen'){if(!document.fullscreenElement)await query('.canvas-wrap').requestFullscreen();else await document.exitFullscreen();}
-  if(action==='save'){const name=window.prompt('Name this preset',`Untitled ${active.name}`)?.trim();if(name){savePreset(localStorage,generatorRegistry,{name,generator:active.id,seed,params:{...params},palette:{...palette}});renderPresets();toast('Preset saved locally');}}
+  if(action==='save'){const name=window.prompt('Name this preset',`Untitled ${active.name}`)?.trim();if(name){savePreset(localStorage,generatorRegistry,{name,generator:active.id,seed,params:{...params},palette:{...palette},backgroundMode});renderPresets();toast('Preset saved locally');}}
 });
-document.addEventListener('input',event=>{const input=event.target as HTMLInputElement;if(input.dataset.param){const def=active.params.find(p=>p.key===input.dataset.param)!;params[def.key]=def.type==='toggle'?input.checked:def.type==='slider'?Number(input.value):input.value;const out=input.parentElement?.querySelector('output');if(out)out.textContent=formatValue(params[def.key]);needsReset=Boolean(active.init); }if(input.dataset.color){palette={...palette,[input.dataset.color]:input.value};const code=input.parentElement?.querySelector('code');if(code)code.textContent=input.value.toUpperCase();reset();}});
-canvas.addEventListener('pointermove',event=>{const r=canvas.getBoundingClientRect();mouse={x:event.clientX-r.left,y:event.clientY-r.top,active:true};});canvas.addEventListener('pointerleave',()=>mouse.active=false);
-window.addEventListener('beforeunload',()=>{animationEngine.destroy();destroyGenerator(active,generatorState);});
-new ResizeObserver(resize).observe(canvas.parentElement!);
+document.addEventListener('input',event=>{const input=event.target as HTMLInputElement;if(input.dataset.param){const def=active.params.find(p=>p.key===input.dataset.param)!;params[def.key]=def.type==='toggle'?input.checked:def.type==='slider'?Number(input.value):input.value;const out=input.parentElement?.querySelector('output');if(out)out.textContent=formatValue(params[def.key]);needsReset=Boolean(active.init); }if(input.dataset.color){if(input.dataset.color==='background')backgroundMode='custom';palette={...palette,[input.dataset.color]:input.value};const code=input.parentElement?.querySelector('code');if(code)code.textContent=input.value.toUpperCase();reset();}});
+const updatePointer=(event:PointerEvent)=>pointerTracker.update(event,canvas.getBoundingClientRect());
+canvas.addEventListener('pointerdown',event=>{canvas.setPointerCapture?.(event.pointerId);updatePointer(event);});
+canvas.addEventListener('pointermove',updatePointer);
+canvas.addEventListener('pointerup',event=>pointerTracker.release(event,canvas.getBoundingClientRect()));
+canvas.addEventListener('pointercancel',()=>pointerTracker.leave());canvas.addEventListener('pointerleave',()=>pointerTracker.leave());
+const resizeObserver=new ResizeObserver(resize);resizeObserver.observe(canvas.parentElement!);
+window.addEventListener('resize',resize);
+window.addEventListener('beforeunload',()=>{resizeObserver.disconnect();window.removeEventListener('resize',resize);animationEngine.destroy();destroyGenerator(active,generatorState);});
 query<HTMLButtonElement>('.theme-button').textContent=theme==='dark'?'☼':'☾';
 renderGenerators();renderPresets();renderParameters();renderPalette();resize();animationEngine.start();

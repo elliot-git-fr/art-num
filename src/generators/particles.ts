@@ -34,7 +34,7 @@ export const particles: Generator = {
       const angle = noise(d.x * num(p.noiseScale), d.y * num(p.noiseScale) + c.time * .00008, c.seed) * Math.PI * 4;
       d.vx += (Math.cos(angle) * num(p.noiseStrength) + Math.cos(direction)) * .012 * speed;
       d.vy += (Math.sin(angle) * num(p.noiseStrength) + Math.sin(direction)) * .012 * speed;
-      if (p.mouse && c.mouse.active) { const dx = c.mouse.x - d.x, dy = c.mouse.y - d.y; const dist = Math.hypot(dx, dy) || 1; if (dist < 240) { d.vx += dx / dist * .025; d.vy += dy / dist * .025; } }
+      if (p.mouse && c.pointer.active) { const dx = c.pointer.x - d.x, dy = c.pointer.y - d.y; const dist = Math.hypot(dx, dy) || 1; if (dist < 240) { d.vx += dx / dist * .025; d.vy += dy / dist * .025; } }
       d.vx *= .985; d.vy *= .985; d.x += d.vx * speed; d.y += d.vy * speed;
       if (d.x < 0) d.x += c.width; if (d.x > c.width) d.x -= c.width; if (d.y < 0) d.y += c.height; if (d.y > c.height) d.y -= c.height;
       c.ctx.beginPath(); c.ctx.arc(d.x, d.y, d.size, 0, Math.PI * 2); c.ctx.fill();

@@ -11,6 +11,15 @@ export interface GeneratorCapabilities {
   exportable: boolean;
 }
 
+export interface PointerState {
+  x: number;
+  y: number;
+  active: boolean;
+  down: boolean;
+  pressure: number;
+  type: string;
+}
+
 export interface ParameterDefinition {
   key: string;
   label: string;
@@ -39,7 +48,7 @@ export interface BaseRenderContext {
   delta: number;
   frame: number;
   seed: number;
-  mouse: { x: number; y: number; active: boolean };
+  pointer: PointerState;
   params: ParamValues;
   palette: Palette;
   random: () => number;
@@ -76,4 +85,5 @@ export interface Preset {
   seed: number;
   params: ParamValues;
   palette: Palette;
+  backgroundMode?: 'auto' | 'custom';
 }
