@@ -4,8 +4,15 @@ import { particles } from './particles'; import { flowField } from './flow-field
 import { voronoi } from './voronoi';
 import { mandelbrot } from './mandelbrot';
 import { reactionDiffusion } from './reaction-diffusion';
+import { julia } from './julia';
+import { cellularAutomata } from './cellular-automata';
+import { boids } from './boids';
+import { metaballs } from './metaballs';
+import { spirograph } from './spirograph';
+import { harmonograph } from './harmonograph';
+import { kaleidoscope } from './kaleidoscope';
 
-const modules: Generator[] = [particles, flowField, waves, lines, grid, circles, noiseArt, spiral, lissajous, attractors, voronoi, mandelbrot, reactionDiffusion];
+const modules: Generator[] = [particles, flowField, waves, lines, grid, circles, noiseArt, spiral, lissajous, attractors, voronoi, mandelbrot, reactionDiffusion, julia, cellularAutomata, boids, metaballs, spirograph, harmonograph, kaleidoscope];
 export const generatorRegistry = new GeneratorRegistry();
 modules.forEach(generator => generatorRegistry.register(generator));
 export const generators = generatorRegistry.getAll();

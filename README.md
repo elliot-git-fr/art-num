@@ -23,6 +23,8 @@ npm run build
 ```
 
 Run the complete gate with `npm run quality`.
+Run unit tests, Playwright, coverage, typecheck, lint and build together with
+`npm run check`.
 
 The responsive E2E suite uses Playwright across mobile, tablet, desktop and
 large-desktop viewports. Install its browser once with
@@ -38,7 +40,13 @@ backends are independently extensible through `src/core/renderer-registry.ts`.
 The deterministic PRNG and procedural noise helpers live in `src/random.ts`.
 User presets are stored in the browser's `localStorage`.
 
-The current catalog contains 13 generators, including Voronoi, Mandelbrot and
-a seeded Gray–Scott reaction-diffusion simulation. Canvas backgrounds support
+The current catalog contains 20 generators, including Voronoi, Mandelbrot,
+Julia Set, Cellular Automata, Boids, Metaballs, Spirograph, Harmonograph,
+Kaleidoscope and a seeded Gray–Scott reaction-diffusion simulation. Canvas backgrounds support
 an automatic theme-aware mode and a custom mode that preserves the artist's
 chosen color.
+
+The preview engine monitors rolling FPS and frame time, classifies performance
+with hysteresis, and can adapt element count, sampling, iterations and effective
+DPR without changing saved artwork parameters. Export temporarily restores full
+render quality. The optional technical panel exposes the active metrics.

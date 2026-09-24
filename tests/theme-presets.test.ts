@@ -62,7 +62,7 @@ describe('presets', () => {
     const storage = memoryStorage();
     savePreset(storage, generatorRegistry, { name: 'Test', generator: 'particles', seed: 12, params: { count: 99999 }, palette: palettes[0] });
     const [preset] = loadPresets(storage, generatorRegistry);
-    expect(preset.name).toBe('Test'); expect(preset.params.count).toBe(900); expect(preset.params.size).toBe(1.4);
+    expect(preset.name).toBe('Test'); expect(preset.params.count).toBe(50000); expect(preset.params.size).toBe(1.4);
   });
   it('ignores malformed and incompatible presets', () => {
     const storage = memoryStorage({ 'gas-presets': JSON.stringify([{ name: 'Old', generator: 'missing', seed: 1, params: {}, palette: palettes[0] }]) });

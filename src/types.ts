@@ -1,6 +1,6 @@
 export type ParamValue = number | boolean | string;
 export type ParamValues = Record<string, ParamValue>;
-export type ControlType = 'slider' | 'number' | 'toggle' | 'select' | 'color';
+export type ControlType = 'slider' | 'number' | 'toggle' | 'select' | 'color' | 'button';
 export type RendererType = 'canvas2d' | 'webgl' | 'three' | 'shader';
 export type GeneratorCategory = 'Particles' | 'Geometry' | 'Mathematical' | 'Organic' | 'Fields' | 'Patterns' | 'Fractals' | 'Physics' | 'Experimental';
 
@@ -31,6 +31,17 @@ export interface ParameterDefinition {
   options?: { label: string; value: string }[];
   random?: [number, number];
   group?: string;
+  recommendedMax?: number;
+  performanceCost?: 'low' | 'medium' | 'high';
+}
+
+export interface RenderQuality {
+  mode: 'preview' | 'export';
+  level: 'low' | 'balanced' | 'high';
+  resolutionScale: number;
+  elementScale: number;
+  iterationScale: number;
+  dprLimit: number;
 }
 
 export interface Palette {
@@ -49,6 +60,7 @@ export interface BaseRenderContext {
   frame: number;
   seed: number;
   pointer: PointerState;
+  quality: RenderQuality;
   params: ParamValues;
   palette: Palette;
   random: () => number;
@@ -74,7 +86,8 @@ export interface Generator<TContext extends BaseRenderContext = RenderContext> {
   render: (context: TContext, state: unknown) => void;
   reset?: (context: TContext, state: unknown) => unknown;
   destroy?: (state: unknown) => void;
-  elementCount?: (params: ParamValues) => number;
+  command?: (command: string, context: TContext, state: unknown) => unknown;
+  elementCount?: (params: ParamValues, quality?: RenderQuality) => number;
 }
 
 export type AnyGenerator = Generator<any>;

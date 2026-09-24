@@ -8,7 +8,8 @@ describe('parameter schemas', () => {
   it('creates defaults from the schema', () => expect(defaultParameters(particles).count).toBe(320));
   it('clamps ranges and restores invalid values', () => {
     const values = sanitizeParameters(particles, { count: 99999, size: Number.NaN, mouse: 'invalid' });
-    expect(values.count).toBe(900); expect(values.size).toBe(1.4); expect(values.mouse).toBe(true);
+    expect(values.count).toBe(50000); expect(values.size).toBe(1.4); expect(values.mouse).toBe(true);
+    expect(particles.params.find(parameter => parameter.key === 'count')?.recommendedMax).toBe(20000);
   });
   it('randomizes deterministically inside curated ranges', () => {
     const a = randomizeParameters(particles, mulberry32(7));

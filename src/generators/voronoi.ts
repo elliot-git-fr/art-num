@@ -9,15 +9,15 @@ export const voronoi: Generator = {
   category: 'Patterns', tags: ['voronoi', 'cells', 'geometry'], renderer: 'canvas2d', defaultPreset: 'Cellular',
   capabilities: { animated: true, interactive: false, deterministic: true, exportable: true },
   params: [
-    slider('sites', 'Cell count', 24, 5, 70, 1, [10, 45]),
-    slider('resolution', 'Cell resolution', 7, 3, 16, 1, [5, 11], 'Style'),
+    slider('sites', 'Cell count', 24, 5, 150, 1, [10, 60], 'Geometry', 'high', 70),
+    slider('resolution', 'Cell resolution', 7, 2, 16, 1, [4, 11], 'Style', 'high', 4),
     slider('speed', 'Drift', .18, 0, 1.2, .01, [.05, .5], 'Motion'),
     slider('range', 'Drift range', .08, 0, .25, .01, [.03, .15], 'Motion'),
     slider('edge', 'Edge strength', .2, 0, .8, .01, [.08, .45], 'Style')
   ],
   init: ({ params, random }: RenderContext) => Array.from({ length: num(params.sites) }, (): Site => ({ x: random(), y: random(), phase: random() * Math.PI * 2, speed: .6 + random() * .8 })),
   render: (context, state) => {
-    const sites = state as Site[]; const step = num(context.params.resolution); const t = context.time * .00012 * num(context.params.speed); const drift = num(context.params.range);
+    const sites = state as Site[]; const step = Math.max(2,num(context.params.resolution)/context.quality.resolutionScale); const t = context.time * .00012 * num(context.params.speed); const drift = num(context.params.range);
     const colors = [context.palette.primary, context.palette.secondary, context.palette.accent];
     for (let y = 0; y < context.height; y += step) for (let x = 0; x < context.width; x += step) {
       let first = Infinity, second = Infinity, nearest = 0;

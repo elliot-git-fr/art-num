@@ -5,10 +5,12 @@ import { destroyGenerator, initializeGenerator, resetGenerator } from '../src/co
 import { mulberry32 } from '../src/random';
 import { palettes } from '../src/palettes';
 import type { RenderContext } from '../src/types';
+import { createExportQuality } from '../src/core/performance';
+import { AdaptiveQualityController } from '../src/core/performance';
 
 function fakeContext(seed = 42): RenderContext {
   const ctx = new Proxy({}, { get: () => () => undefined, set: () => true }) as CanvasRenderingContext2D;
-  return { renderer: 'canvas2d', ctx, width: 320, height: 240, time: 1000, delta: 16, frame: 1, seed, pointer: { x: 0, y: 0, active: false, down: false, pressure: 0, type: 'mouse' }, params: {}, palette: palettes[0], random: mulberry32(seed) };
+  return { renderer: 'canvas2d', ctx, width: 320, height: 240, time: 1000, delta: 16, frame: 1, seed, pointer: { x: 0, y: 0, active: false, down: false, pressure: 0, type: 'mouse' }, quality:createExportQuality(), params: {}, palette: palettes[0], random: mulberry32(seed) };
 }
 
 describe.each(generators)('$name generator contract', generator => {
@@ -26,5 +28,11 @@ describe.each(generators)('$name generator contract', generator => {
     const first = fakeContext(12); first.params = defaultParameters(generator);
     const second = fakeContext(12); second.params = defaultParameters(generator);
     expect(generator.init(first)).toEqual(generator.init(second));
+  });
+  it('keeps costly maximum parameters bounded in low preview quality',()=>{
+    const costly=generator.params.filter(parameter=>parameter.performanceCost==='high');if(!costly.length)return;
+    const context=fakeContext();context.width=64;context.height=48;context.quality=new AdaptiveQualityController(true,'low').quality;context.params=defaultParameters(generator);
+    for(const parameter of costly)if(parameter.max!==undefined)context.params[parameter.key]=parameter.max;
+    const artisticSnapshot={...context.params};expect(()=>{const state=initializeGenerator(generator,context);generator.render(context,state);destroyGenerator(generator,state);}).not.toThrow();expect(context.params).toEqual(artisticSnapshot);
   });
 });

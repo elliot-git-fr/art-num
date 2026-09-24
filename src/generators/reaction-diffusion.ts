@@ -9,7 +9,7 @@ export const reactionDiffusion: Generator = {
   category: 'Organic', tags: ['simulation', 'gray-scott', 'organic'], renderer: 'canvas2d', defaultPreset: 'Living Coral',
   capabilities: { animated: true, interactive: false, deterministic: true, exportable: true },
   params: [
-    slider('resolution', 'Simulation resolution', 82, 36, 140, 2, [55, 110]),
+    slider('resolution', 'Simulation resolution', 82, 36, 240, 2, [55, 130], 'Geometry', 'high', 140),
     slider('feed', 'Feed rate', .055, .02, .09, .001, [.032, .072], 'Chemistry'),
     slider('kill', 'Kill rate', .062, .04, .075, .001, [.052, .068], 'Chemistry'),
     slider('diffusionA', 'Diffusion A', 1, .2, 1.4, .05, [.7, 1.2], 'Chemistry'),
@@ -18,7 +18,7 @@ export const reactionDiffusion: Generator = {
     slider('seeds', 'Initial colonies', 8, 1, 24, 1, [3, 16], 'Geometry')
   ],
   init: (context: RenderContext): ReactionState => {
-    const columns = num(context.params.resolution); const rows = Math.max(24, Math.round(columns * context.height / Math.max(1, context.width))); const length = columns * rows;
+    const columns = Math.max(24,Math.round(num(context.params.resolution)*context.quality.resolutionScale)); const rows = Math.max(24, Math.round(columns * context.height / Math.max(1, context.width))); const length = columns * rows;
     const state: ReactionState = { columns, rows, a: new Float32Array(length).fill(1), b: new Float32Array(length), nextA: new Float32Array(length), nextB: new Float32Array(length) };
     for (let seed = 0; seed < num(context.params.seeds); seed++) {
       const cx = Math.floor(context.random() * columns); const cy = Math.floor(context.random() * rows); const radius = 2 + Math.floor(context.random() * 4);

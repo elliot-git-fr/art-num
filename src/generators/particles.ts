@@ -1,6 +1,7 @@
 import type { Generator, RenderContext } from '../types';
 import { hexToRgba, noise } from '../random';
 import { slider, toggle, num } from './shared';
+import { effectiveCount } from '../core/performance';
 
 type Dot = { x: number; y: number; vx: number; vy: number; size: number };
 
@@ -9,7 +10,7 @@ export const particles: Generator = {
   category: 'Particles', tags: ['particles', 'motion', 'interactive'], renderer: 'canvas2d', defaultPreset: 'Nebula',
   capabilities: { animated: true, interactive: true, deterministic: true, exportable: true },
   params: [
-    slider('count', 'Particle count', 320, 30, 900, 1, [120, 620]),
+    slider('count', 'Particle count', 320, 30, 50000, 10, [120, 5000], 'Geometry', 'high', 20000),
     slider('size', 'Particle size', 1.4, 0.4, 5, 0.1, [0.6, 2.8]),
     slider('speed', 'Speed', 0.55, 0.05, 2, 0.05, [0.2, 1.2], 'Motion'),
     slider('direction', 'Direction', 0, -180, 180, 1, [-90, 90], 'Motion'),
@@ -21,7 +22,7 @@ export const particles: Generator = {
     slider('connection', 'Connection distance', 64, 0, 160, 1, [30, 110], 'Style'),
     toggle('mouse', 'Mouse attraction', true),
   ],
-  init: ({ width, height, params, random }) => Array.from({ length: num(params.count) }, (): Dot => ({
+  init: ({ width, height, params, random, quality }) => Array.from({ length: effectiveCount(num(params.count), 20000, quality) }, (): Dot => ({
     x: random() * width, y: random() * height,
     vx: (random() - .5) * .3, vy: (random() - .5) * .3,
     size: num(params.size) * (.5 + random())
@@ -48,5 +49,5 @@ export const particles: Generator = {
       }
     }
   },
-  elementCount: p => num(p.count)
+  elementCount: (p,q) => q?effectiveCount(num(p.count),20000,q):num(p.count)
 };

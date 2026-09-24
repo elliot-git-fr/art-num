@@ -7,15 +7,15 @@ export const mandelbrot: Generator = {
   category: 'Fractals', tags: ['mandelbrot', 'fractal', 'complex'], renderer: 'canvas2d', defaultPreset: 'Infinite Coast',
   capabilities: { animated: false, interactive: false, deterministic: true, exportable: true },
   params: [
-    slider('iterations', 'Iterations', 72, 15, 220, 1, [35, 130]),
+    slider('iterations', 'Iterations', 72, 15, 500, 1, [35, 180], 'Geometry', 'high', 220),
     slider('zoom', 'Zoom', 1, .45, 8, .01, [.7, 3.2]),
     slider('offsetX', 'Horizontal focus', -.55, -2, 1, .01, [-1.2, .2]),
     slider('offsetY', 'Vertical focus', 0, -1.5, 1.5, .01, [-.7, .7]),
-    slider('resolution', 'Pixel size', 4, 2, 10, 1, [3, 7], 'Style'),
+    slider('resolution', 'Pixel size', 4, 1, 10, 1, [2, 7], 'Style', 'high', 3),
     slider('contrast', 'Color contrast', 1.4, .4, 3, .05, [.8, 2.2], 'Style')
   ],
   render: context => {
-    const step = num(context.params.resolution); const max = num(context.params.iterations); const zoom = num(context.params.zoom); const aspect = context.width / Math.max(1, context.height);
+    const step = Math.max(1,num(context.params.resolution)/context.quality.resolutionScale); const max = Math.max(10,Math.round(num(context.params.iterations)*context.quality.iterationScale)); const zoom = num(context.params.zoom); const aspect = context.width / Math.max(1, context.height);
     const colors = [context.palette.primary, context.palette.secondary, context.palette.accent];
     for (let py = 0; py < context.height; py += step) for (let px = 0; px < context.width; px += step) {
       const cx = (px / context.width - .5) * 3.2 * aspect / zoom + num(context.params.offsetX); const cy = (py / context.height - .5) * 3.2 / zoom + num(context.params.offsetY);

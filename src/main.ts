@@ -13,6 +13,8 @@ import { downloadCanvas } from './core/export';
 import { destroyGenerator, initializeGenerator, resetGenerator } from './core/generator-lifecycle';
 import { calculateCanvasSize, layoutMode } from './core/responsive';
 import { PointerTracker } from './core/pointer';
+import { AdaptiveQualityController, PerformanceMonitor, createExportQuality, type PerformanceSnapshot } from './core/performance';
+import { VisibilityPauseController } from './core/visibility';
 
 const defaults: Preset[] = [
   { name:'Nebula', generator:'particles', seed:48291, params:{count:430,size:1.2,speed:.5,direction:-8,randomness:.72,noiseScale:.006,noiseStrength:1.35,trail:.08,opacity:.65,connection:58,mouse:true}, palette:palettes[4] },
@@ -34,6 +36,7 @@ app.innerHTML = `
         <button class="icon-button" data-action="randomize" title="Randomize">⌁</button>
       </div>
       <div class="top-actions">
+        <button class="icon-button" data-action="debug" title="Performance panel">▥</button>
         <button class="icon-button theme-button" data-action="theme" title="Switch theme">☼</button>
         <button class="text-button" data-action="export">Export</button>
         <button class="text-button" data-action="save">Save preset</button>
@@ -54,6 +57,7 @@ app.innerHTML = `
         <div class="canvas-vignette"></div>
         <div class="canvas-label"><span class="live-dot"></span><span class="art-title">UNTITLED STUDY</span></div>
         <div class="stats"><span class="fps">60 FPS</span><i></i><span class="elements">0 ELEMENTS</span></div>
+        <div class="performance-panel" hidden><b>PERFORMANCE</b><dl><dt>FPS AVG</dt><dd data-metric="fps">60</dd><dt>FRAME</dt><dd data-metric="frame">16.7 MS</dd><dt>STATE</dt><dd data-metric="state">EXCELLENT</dd><dt>GENERATOR</dt><dd data-metric="generator">PARTICLES</dd><dt>RENDERER</dt><dd data-metric="renderer">CANVAS2D</dd><dt>ELEMENTS</dt><dd data-metric="elements">0</dd><dt>DPR</dt><dd data-metric="dpr">1×</dd><dt>PREVIEW</dt><dd data-metric="quality">HIGH</dd></dl></div>
         <div class="hint">MOVE YOUR CURSOR TO INTERACT</div>
       </div>
     </main>
@@ -70,6 +74,7 @@ app.innerHTML = `
         <div class="section-title"><span>SEED</span></div>
         <div class="seed-control"><code class="seed-value"></code><button data-action="copy-seed" title="Copy seed">▢</button><button data-action="new-seed" title="New seed">↻</button></div>
       </section>
+      <section class="performance-settings"><div class="section-title"><span>PERFORMANCE</span></div><button data-action="adaptive-quality">Adaptive quality <b>ON</b></button><button data-action="preview-quality">Preview quality <b>AUTO</b></button><button data-action="toggle-fps">FPS indicator <b>ON</b></button></section>
     </aside>
     <button class="drawer-backdrop" data-action="close-panel" aria-label="Close panel"></button>
     <nav class="mobile-nav" aria-label="Studio panels">
@@ -95,13 +100,18 @@ let needsReset = true;
 const pointerTracker = new PointerTracker();
 let fps = 60;
 let mobilePanel: string | null = null;
+const performanceMonitor=new PerformanceMonitor();
+const adaptiveQuality=new AdaptiveQualityController(true,'auto');
+let renderQuality=adaptiveQuality.quality;
+let performanceSnapshot:PerformanceSnapshot=performanceMonitor.snapshot();
+let showFps=true;
 
 function getDefaults(generator: Generator): ParamValues { return defaultParameters(generator); }
 function query<T extends Element>(selector:string) { return document.querySelector<T>(selector)!; }
 
 function resize() {
   const box = canvas.parentElement!.getBoundingClientRect();
-  const size = calculateCanvasSize(box.width,box.height,devicePixelRatio);
+  const size = calculateCanvasSize(box.width,box.height,devicePixelRatio,renderQuality.dprLimit);
   canvas.width=size.pixelWidth;canvas.height=size.pixelHeight;
   canvas.style.width=`${size.cssWidth}px`;canvas.style.height=`${size.cssHeight}px`;
   ctx.setTransform(size.pixelRatio,0,0,size.pixelRatio,0,0);needsReset=true;
@@ -129,9 +139,10 @@ function renderParameters() {
   for(const def of active.params){ const group=def.group||'Geometry'; groups.set(group,[...(groups.get(group)||[]),def]); }
   query('.parameters').innerHTML = [...groups].map(([group,defs])=>`<section class="param-group"><div class="group-title">${group.toUpperCase()}</div>${defs.map(def=>{
     const val=params[def.key];
+    if(def.type==='button') return `<button class="parameter-command" data-action="generator-command" data-command="${def.key}">${def.label}</button>`;
     if(def.type==='toggle') return `<label class="control toggle-control"><span>${def.label}</span><input type="checkbox" data-param="${def.key}" ${val?'checked':''}><i></i></label>`;
     if(def.type==='select') return `<label class="control"><span>${def.label}</span><select data-param="${def.key}">${def.options?.map(o=>`<option value="${o.value}" ${o.value===val?'selected':''}>${o.label}</option>`)}</select></label>`;
-    return `<label class="control range-control"><span>${def.label}</span><output>${formatValue(val)}</output><input type="range" data-param="${def.key}" min="${def.min}" max="${def.max}" step="${def.step}" value="${val}"></label>`;
+    const warning=def.recommendedMax!==undefined&&Number(val)>def.recommendedMax;return `<label class="control range-control ${warning?'performance-warning':''}" title="${warning?`Recommended maximum: ${def.recommendedMax}`:''}"><span>${def.label}${def.performanceCost==='high'?'<i>HIGH COST</i>':''}</span><output>${formatValue(val)}</output><input type="range" data-param="${def.key}" min="${def.min}" max="${def.max}" step="${def.step}" value="${val}"></label>`;
   }).join('')}</section>`).join('');
 }
 
@@ -143,19 +154,22 @@ function renderPalette() {
 }
 
 function reset() { frame=0; started=performance.now(); needsReset=true; animationEngine.reset(); }
-function makeContext(now:number, delta:number):RenderContext { const ratio=Math.min(devicePixelRatio,2); return {renderer:'canvas2d',ctx,width:canvas.width/ratio,height:canvas.height/ratio,time:now-started,delta,frame,seed,pointer:pointerTracker.state,params,palette,random:mulberry32(seed)}; }
+function makeContext(now:number, delta:number):RenderContext { const cssWidth=Math.max(1,canvas.getBoundingClientRect().width);const ratio=canvas.width/cssWidth;return {renderer:'canvas2d',ctx,width:canvas.width/ratio,height:canvas.height/ratio,time:now-started,delta,frame,seed,pointer:pointerTracker.state,quality:renderQuality,params,palette,random:mulberry32(seed)}; }
 
 function animate(now:number, delta:number) {
-  fps=fps*.9+(1000/Math.max(delta,1))*.1;
+  performanceSnapshot=performanceMonitor.record(delta);fps=performanceSnapshot.averageFps;
   const c=makeContext(now,delta);
-  if(needsReset){ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=palette.background;ctx.fillRect(0,0,canvas.width,canvas.height);ctx.setTransform(Math.min(devicePixelRatio,2),0,0,Math.min(devicePixelRatio,2),0,0);generatorState=generatorState===undefined?initializeGenerator(active,c):resetGenerator(active,c,generatorState);needsReset=false;}
+  if(needsReset){ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=palette.background;ctx.fillRect(0,0,canvas.width,canvas.height);const renderRatio=canvas.width/Math.max(1,c.width);ctx.setTransform(renderRatio,0,0,renderRatio,0,0);generatorState=generatorState===undefined?initializeGenerator(active,c):resetGenerator(active,c,generatorState);needsReset=false;}
   ctx.save();
-  if(active.id==='particles'){ctx.fillStyle=hexToRgba(palette.background,Math.max(.025,Number(params.trail)));ctx.fillRect(0,0,c.width,c.height)}else{ctx.fillStyle=palette.background;ctx.fillRect(0,0,c.width,c.height)}
+  if(active.id==='particles'||active.id==='boids'){ctx.fillStyle=hexToRgba(palette.background,Math.max(.025,Number(params.trail)));ctx.fillRect(0,0,c.width,c.height)}else{ctx.fillStyle=palette.background;ctx.fillRect(0,0,c.width,c.height)}
   active.render(c,generatorState); ctx.restore(); frame++;
-  if(frame%20===0){query('.fps').textContent=`${Math.round(Math.min(fps,99))} FPS`;query('.elements').textContent=`${Math.round(active.elementCount?.(params)||0).toLocaleString()} ELEMENTS`;}
+  if(frame%20===0){const previous=renderQuality;renderQuality=adaptiveQuality.update(performanceSnapshot.state);if(previous.level!==renderQuality.level){needsReset=true;resize();}updatePerformanceUi();}
 }
 
+function updatePerformanceUi(){const elements=Math.round(active.elementCount?.(params,renderQuality)||0);query('.fps').textContent=`${Math.round(Math.min(fps,99))} FPS`;query<HTMLElement>('.fps').style.display=showFps?'':'none';query('.elements').textContent=`${elements.toLocaleString()} ELEMENTS`;const values:Record<string,string>={fps:String(Math.round(performanceSnapshot.averageFps)),frame:`${performanceSnapshot.frameTime.toFixed(1)} MS`,state:performanceSnapshot.state.toUpperCase(),generator:active.name.toUpperCase(),renderer:active.renderer.toUpperCase(),elements:elements.toLocaleString(),dpr:`${Math.min(devicePixelRatio,renderQuality.dprLimit).toFixed(1)}×`,quality:renderQuality.level.toUpperCase()};for(const [key,value]of Object.entries(values))query(`[data-metric="${key}"]`).textContent=value;}
+
 const animationEngine = new AnimationEngine(animate);
+const visibilityPause=new VisibilityPauseController(animationEngine,()=>performanceMonitor.reset());
 
 function selectGenerator(id:string){const found=generatorRegistry.get(id);if(!found)return;destroyGenerator(active,generatorState);generatorState=undefined;active=found;params=getDefaults(active);renderGenerators();renderParameters();reset();}
 function randomize(){params=randomizeParameters(active,mulberry32(seed+frame+Date.now()));renderParameters();reset();toast('New variation generated');}
@@ -172,10 +186,15 @@ document.addEventListener('click',async event=>{const target=(event.target as HT
   const action=target.dataset.action;if(!action)return;
   if(action==='play'){if(animationEngine.running)animationEngine.pause();else animationEngine.resume();target.querySelector('.play-icon')!.textContent=animationEngine.running?'Ⅱ':'▶';}
   if(action==='about')toast('Generative Art Studio · Canvas 2D');
+  if(action==='debug'){const panel=query<HTMLElement>('.performance-panel');panel.hidden=!panel.hidden;updatePerformanceUi();}
+  if(action==='generator-command'&&active.command){generatorState=active.command(target.dataset.command||'',makeContext(performance.now(),0),generatorState);}
+  if(action==='adaptive-quality'){adaptiveQuality.enabled=!adaptiveQuality.enabled;renderQuality=adaptiveQuality.quality;target.querySelector('b')!.textContent=adaptiveQuality.enabled?'ON':'OFF';reset();resize();}
+  if(action==='preview-quality'){const modes=['auto','low','balanced','high'] as const;adaptiveQuality.preview=modes[(modes.indexOf(adaptiveQuality.preview)+1)%modes.length];renderQuality=adaptiveQuality.quality;target.querySelector('b')!.textContent=adaptiveQuality.preview.toUpperCase();reset();resize();}
+  if(action==='toggle-fps'){showFps=!showFps;target.querySelector('b')!.textContent=showFps?'ON':'OFF';updatePerformanceUi();}
   if(action==='close-panel')setMobilePanel(null);
   if(action==='theme'){theme=oppositeTheme(theme);applyTheme(theme,document.documentElement,localStorage);palette=syncCanvasBackground(palette,backgroundMode,theme);renderPalette();reset();target.textContent=theme==='dark'?'☼':'☾';toast(`${theme==='dark'?'Dark':'Light'} mode`);}
   if(action==='background-mode'){backgroundMode=backgroundMode==='auto'?'custom':'auto';palette=syncCanvasBackground(palette,backgroundMode,theme);renderPalette();reset();toast(`Background ${backgroundMode}`);}
-  if(action==='export'){downloadCanvas(canvas,`${active.id}-${seed}.png`);toast('Artwork exported');}
+  if(action==='export'){const preview=renderQuality;renderQuality=createExportQuality();resize();reset();requestAnimationFrame(()=>{downloadCanvas(canvas,`${active.id}-${seed}.png`);renderQuality=preview;resize();reset();toast('Artwork exported at full quality');});}
   if(action==='restart')reset(); if(action==='randomize')randomize(); if(action==='reset-params'){params=getDefaults(active);renderParameters();reset();}
   if(action==='new-seed'){seed=Math.floor(Math.random()*99999999);renderPalette();reset();toast('New seed created');}
   if(action==='copy-seed'){await navigator.clipboard.writeText(String(seed));toast('Seed copied');}
@@ -183,7 +202,7 @@ document.addEventListener('click',async event=>{const target=(event.target as HT
   if(action==='fullscreen'){if(!document.fullscreenElement)await query('.canvas-wrap').requestFullscreen();else await document.exitFullscreen();}
   if(action==='save'){const name=window.prompt('Name this preset',`Untitled ${active.name}`)?.trim();if(name){savePreset(localStorage,generatorRegistry,{name,generator:active.id,seed,params:{...params},palette:{...palette},backgroundMode});renderPresets();toast('Preset saved locally');}}
 });
-document.addEventListener('input',event=>{const input=event.target as HTMLInputElement;if(input.dataset.param){const def=active.params.find(p=>p.key===input.dataset.param)!;params[def.key]=def.type==='toggle'?input.checked:def.type==='slider'?Number(input.value):input.value;const out=input.parentElement?.querySelector('output');if(out)out.textContent=formatValue(params[def.key]);needsReset=Boolean(active.init); }if(input.dataset.color){if(input.dataset.color==='background')backgroundMode='custom';palette={...palette,[input.dataset.color]:input.value};const code=input.parentElement?.querySelector('code');if(code)code.textContent=input.value.toUpperCase();reset();}});
+document.addEventListener('input',event=>{const input=event.target as HTMLInputElement;if(input.dataset.param){const def=active.params.find(p=>p.key===input.dataset.param)!;params[def.key]=def.type==='toggle'?input.checked:def.type==='slider'?Number(input.value):input.value;const out=input.parentElement?.querySelector('output');if(out)out.textContent=formatValue(params[def.key]);const warning=def.recommendedMax!==undefined&&Number(params[def.key])>def.recommendedMax;input.parentElement?.classList.toggle('performance-warning',warning);needsReset=Boolean(active.init); }if(input.dataset.color){if(input.dataset.color==='background')backgroundMode='custom';palette={...palette,[input.dataset.color]:input.value};const code=input.parentElement?.querySelector('code');if(code)code.textContent=input.value.toUpperCase();reset();}});
 const updatePointer=(event:PointerEvent)=>pointerTracker.update(event,canvas.getBoundingClientRect());
 canvas.addEventListener('pointerdown',event=>{canvas.setPointerCapture?.(event.pointerId);updatePointer(event);});
 canvas.addEventListener('pointermove',updatePointer);
@@ -191,6 +210,7 @@ canvas.addEventListener('pointerup',event=>pointerTracker.release(event,canvas.g
 canvas.addEventListener('pointercancel',()=>pointerTracker.leave());canvas.addEventListener('pointerleave',()=>pointerTracker.leave());
 const resizeObserver=new ResizeObserver(resize);resizeObserver.observe(canvas.parentElement!);
 window.addEventListener('resize',resize);
-window.addEventListener('beforeunload',()=>{resizeObserver.disconnect();window.removeEventListener('resize',resize);animationEngine.destroy();destroyGenerator(active,generatorState);});
+const onVisibilityChange=()=>visibilityPause.handle(document.hidden);document.addEventListener('visibilitychange',onVisibilityChange);
+window.addEventListener('beforeunload',()=>{resizeObserver.disconnect();window.removeEventListener('resize',resize);document.removeEventListener('visibilitychange',onVisibilityChange);animationEngine.destroy();destroyGenerator(active,generatorState);});
 query<HTMLButtonElement>('.theme-button').textContent=theme==='dark'?'☼':'☾';
 renderGenerators();renderPresets();renderParameters();renderPalette();resize();animationEngine.start();
